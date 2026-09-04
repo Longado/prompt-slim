@@ -1,0 +1,12 @@
+{
+  "name": "prompt-slim",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Zero-dependency ESM prompt auditor. Same src/ runs on Node >= 20 and in the browser.",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.mjs\"",
+    "test:golden": "GOLDEN=1 node --test test/golden.test.mjs"
+  }
+}
