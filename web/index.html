@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>prompt-slim — 提示词瘦身</title>
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>prompt-slim — 提示词瘦身</h1>
+  <p class="lede">
+    贴入你的系统提示词,它对每条<strong>可测</strong>规则跑两次探针——一次空系统提示词(裸模型),一次你的全文——
+    然后告诉你每条规则落在四格里的哪一格:候选死重 / 在起作用 / 未观察到效果 / 疑似反效。
+  </p>
+  <div class="privacy">
+    <strong>隐私:</strong>这是一个静态页面。你的提示词和 API key 只在<strong>你自己的浏览器</strong>和
+    <strong>api.anthropic.com</strong> 之间传输,<strong>不经过任何第三方服务器</strong>(包括本页的托管方)。
+    key 只存在内存里,页面一关就没了——除非你勾选下面的「记住到本机 localStorage」,那样它会明文留在这台设备的浏览器存储里。
+  </div>
+</header>
+
+<div id="banner" class="banner err" hidden></div>
+<div id="mock-note" class="banner info" hidden>
+  演示模式(<code>?mock=1</code>):不联网、不花钱、不需要 key,规则与报告都是假的,只用来走通页面流程。
+</div>
+
+<main>
+
+<!-- ============ 1. 输入 ============ -->
+<section id="sec-input">
+  <h2>输入</h2>
+
+  <div class="field">
+    <label for="prompt-text">系统提示词全文</label>
+    <textarea id="prompt-text" rows="12" spellcheck="false"
+      placeholder="把你的系统提示词整段贴进来……"></textarea>
+    <p class="note">
+      <span id="len-note">0 字符</span>
+      <button type="button" id="btn-sample" class="ghost small" hidden>载入示例提示词</button>
+    </p>
+  </div>
+
+  <div class="field">
+    <label for="api-key">Anthropic API key</label>
+    <input type="password" id="api-key" autocomplete="off" spellcheck="false" placeholder="sk-ant-...">
+    <label class="check" style="margin-top:8px">
+      <input type="checkbox" id="remember-key">
+      <span>记住到本机 localStorage(明文存在这台设备上;不勾选则只存内存)</span>
+    </label>
+  </div>
+
+  <div class="grid">
+    <div class="field">
+      <label for="target-model">被测模型</label>
+      <select id="target-model">
+        <option value="claude-fable-5-1">claude-fable-5-1</option>
+        <option value="claude-opus-5">claude-opus-5</option>
+        <option value="claude-sonnet-5" selected>claude-sonnet-5</option>
+        <option value="claude-haiku-4-5-20251001">claude-haiku-4-5-20251001</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>裁判模型(自动)</label>
+      <div class="readonly-box" id="judge-model-box">claude-opus-5</div>
+      <p class="note">claude-opus-5,若与被测模型相同则改用 claude-sonnet-5。裁判模型永远不等于被测模型。</p>
+    </div>
+  </div>
+
+  <div class="field" style="max-width:220px">
+    <label for="runs">每探针重复次数 n</label>
+    <input type="number" id="runs" value="1" min="1" max="9" step="1">
+    <p class="note">n=1 表示每个探针裸模型跑一次、灌全文跑一次,单次采样,<strong>没有方差估计</strong>;
+      结果可能被一次抽样运气翻转。调大取多数票更稳,但 token 成本线性增加。</p>
+  </div>
+
+  <div class="actions">
+    <button type="button" id="btn-extract">第一步:认规则</button>
+    <span id="extract-status" class="note-inline"></span>
+  </div>
+</section>
+
+<!-- ============ 2. 规则表 ============ -->
+<section id="sec-rules" hidden>
+  <h2>第一步结果:认出的规则</h2>
+  <div class="stats" id="rule-stats"></div>
+  <div class="actions" style="margin-bottom:10px">
+    <button type="button" id="btn-check-testable" class="ghost small">只勾可测的</button>
+    <button type="button" id="btn-check-none" class="ghost small">全不勾</button>
+  </div>
+  <div class="scroll-x">
+    <table id="rule-table">
+      <thead>
+        <tr>
+          <th><span title="勾选的规则才会跑探针">测</span></th>
+          <th>id</th>
+          <th>quote</th>
+          <th>类别</th>
+          <th>可测</th>
+          <th class="num">token</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <p class="note" id="token-source-note"></p>
+  <div class="actions" style="margin-top:14px">
+    <button type="button" id="btn-audit">第二步:跑探针</button>
+    <button type="button" id="btn-abort" class="ghost" hidden>中止</button>
+    <span id="audit-status" class="note-inline"></span>
+  </div>
+  <div id="progress-wrap" hidden style="margin-top:12px">
+    <progress id="progress-bar" value="0" max="1"></progress>
+    <div class="tokenline" id="token-line"></div>
+    <p class="note">输出 token 含模型思考(fable 5.1 默认自适应思考且不可关闭)。只报 token,不报美元——价格表会腐,自己乘。</p>
+  </div>
+</section>
+
+<!-- ============ 3. 结果 ============ -->
+<section id="sec-result" hidden>
+  <h2>第二步结果:四格</h2>
+  <div class="cards" id="quadrant-cards"></div>
+  <p class="note" id="deadweight-note"></p>
+
+  <h3>逐规则</h3>
+  <div class="scroll-x">
+    <table id="result-table">
+      <thead>
+        <tr>
+          <th>id</th>
+          <th>quote</th>
+          <th>类别</th>
+          <th>格</th>
+          <th class="num">token</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="actions" style="margin-top:16px">
+    <button type="button" id="btn-slim">生成去掉候选死重的版本</button>
+    <button type="button" id="btn-export" class="ghost">导出 JSON 报告</button>
+  </div>
+</section>
+
+<!-- ============ 4. 瘦身版本 ============ -->
+<section id="sec-slim" hidden>
+  <h2>瘦身版本(候选)</h2>
+  <p class="note" id="slim-note"></p>
+  <div id="slim-warn" class="banner warn" hidden></div>
+  <textarea id="slim-text" rows="14" spellcheck="false" readonly></textarea>
+  <div class="actions" style="margin-top:10px">
+    <button type="button" id="btn-copy" class="ghost">复制</button>
+    <button type="button" id="btn-download" class="ghost">下载 .txt</button>
+    <span id="copy-status" class="note-inline"></span>
+  </div>
+  <p class="note"><strong>这是候选,不是判决。请拿回你自己的 eval 验证。</strong></p>
+</section>
+
+</main>
+
+<footer>
+  <h2>诚实边界</h2>
+  <ul>
+    <li>裸对全文只回答「这个行为是不是模型自带的」,<strong>回答不了「是你哪条规则造成的」</strong>。灌了才出现的行为归到瞄准的那条上是假设。逐条消融是 v2。</li>
+    <li>默认每探针 n=1。表上写明。</li>
+    <li>只报 token,不报美元。价格表会腐,让用户自己乘。输出 token 含模型思考(fable 5.1 默认自适应思考且不可关闭)。</li>
+    <li>仅 Claude。证据全来自 Claude,别的模型性情不同。</li>
+  </ul>
+  <!-- usage counter script placeholder -->
+</footer>
+
+</div>
+<script type="module" src="./app.mjs"></script>
+</body>
+</html>
