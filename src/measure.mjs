@@ -3,7 +3,7 @@
 
 // Chinese ordinals ("一、" "二、") are bullets too — an English-only bullet regex silently
 // scores a fully formatted Chinese answer as "no formatting". Known lesson, do not drop.
-const BULLET_RE = /^\s*([-*+]|\d+[.)]|[一二三四五六七八九十]+、)\s?/;
+const BULLET_RE = /^\s*(?:[-*+]\s+|\d+[.)]\s+|[一二三四五六七八九十]+、)/;
 const HEADER_RE = /^\s*#{1,6}\s/;
 const BOLD_RE = /\*\*[^*\n]+\*\*/g;
 const PIPE_RE = /\|/g;
