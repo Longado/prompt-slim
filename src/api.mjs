@@ -143,8 +143,8 @@ export function textOf(response) {
 }
 
 /**
- * Normalised usage. `thinking` is only populated when the API reports it separately;
- * today thinking tokens are billed inside `output`, so 0 here does not mean "did not think".
+ * Normalised usage. `thinking` comes from `usage.output_tokens_details.thinking_tokens`
+ * (fable 5.1 reports it there; it is a subset of `output`, not additional).
  */
 export function usageOf(response) {
   const u = response?.usage ?? {};

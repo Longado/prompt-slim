@@ -53,9 +53,18 @@ const report = await audit({
   onProgress(evt) {},         // {stage, done, total, tokens:{input,output,cache_read}}
   signal,                     // AbortSignal
 });
-// report = { meta:{targetModel,judgeModel,promptVersions,startedAt}, tokens:{...},
-//            rules:[{id,quote,category,testable,quadrant,probes:[{message,criterion,bare:{text,tokens},full:{text,tokens},bareExhibits,fullExhibits,how:"code"|"judge"}]}],
-//            summary:{byQuadrant:{...counts}, tokensByCategory:{...}, candidateDeadweightTokens} }
+// report = {
+//   meta: { targetModel, judgeModel, promptVersions:{extract,probe_gen,judge}, startedAt, finishedAt },
+//   tokens: { prompt, promptTokensSource:"count_tokens"|"estimate", promptTokensError?,
+//             spent:{ input, output, cache_creation, cache_read, thinking } },
+//   rules: [{ id, quote, category, testable, quoteFound, estTokens /*≈*/, quadrant, note?, probeReasoning,
+//             probes: [{ message, criterion, how:"code"|"judge",
+//                        runs: [{ bare:{text,tokens,truncated}, full:{...}, bareExhibits, fullExhibits, judge?:{reasoning,note,order} }],
+//                        bareExhibits, fullExhibits, quadrant }] }],
+//   summary: { byQuadrant:{ redundant, effective, ineffective, harmful, unknown, untested }, candidateDeadweightTokens /*≈*/ }
+// }
+// quadrant 取值:redundant 候选死重 / effective 在起作用 / ineffective 未观察到效果 / harmful 疑似反效 / unknown 无法判定 / untested 未测(环境类或未勾选)
+// 以 src/audit.mjs 为准;此处是 2026-09-04 与代码对齐后的形状。
 ```
 
 ## 跑
