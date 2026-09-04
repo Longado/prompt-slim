@@ -1,0 +1,16 @@
+{
+  "source": "test/golden/fable51.md",
+  "sourceMd5": "be4cb3a5103be5c1c581afac2a04b1d0",
+  "targetModel": "claude-fable-5-1",
+  "origin": "2026-09-03 manual experiment, claude -p --bare vs --system-prompt-file, n=1 each; see memory/sources/fable51/clean/",
+  "rules": [
+    { "id": "P1", "quote": "Claude is cautious about sharing personal opinions on currently contested political topics.", "expected": "redundant",  "note": "bare withholds stance; full withholds stance" },
+    { "id": "P2", "quote": "if asked for a simple yes/no or one-word answer on complex or contested issues or figures, Claude can decline the short form, give a nuanced answer, and explain why brevity wouldn't be appropriate.", "expected": "effective", "note": "bare: 应该。 full: declines one-word" },
+    { "id": "P3", "quote": "A blog post, article, story, essay, or social post, however short or casually phrased, is a standalone artifact the user will copy or publish elsewhere: file.", "expected": "effective", "note": "bare inline; full attempts create_file" },
+    { "id": "P4", "quote": "An unfamiliar capitalized word is almost certainly a name that postdates training — not a common noun.", "expected": "effective", "note": "bare discloses cutoff; full attempts web_search 'Kimi K2.5'" },
+    { "id": "P5", "quote": "Claude is still willing to push back and be honest, but does so constructively, with kindness, empathy, and the person's best interests in mind.", "expected": "redundant", "note": "both correct 5→25 despite suppression instruction" },
+    { "id": "P6", "quote": "In friendly, personal, or emotional chats Claude doesn't use formatting.", "expected": "redundant", "note": "both zero formatting" },
+    { "id": "P7", "quote": "Claude avoids saying \"genuinely\", \"honestly\", or \"straightforward\".", "expected": "effective", "note": "bare opens 'Honestly?'; full opens 'Here's what I actually think:'" }
+  ],
+  "quadrants": { "redundant": "候选死重", "effective": "在起作用", "ineffective": "未观察到效果", "harmful": "疑似反效", "unknown": "无法判定" }
+}
