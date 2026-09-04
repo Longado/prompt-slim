@@ -190,6 +190,7 @@ async function auditOneRule({ rule, promptText, apiKey, targetModel, judgeModel,
 
 /**
  * auditRules({ promptText, rules, apiKey, targetModel, judgeModel, runs, onProgress, signal })
+ * onRuleDone?(ruleReport, doneCount, total) — 每条规则完成即回调;调用方据此断点保存,付费结果不因中途失败丢失。
  * Rules come in already extracted (the golden test supplies them by hand).
  */
 export async function auditRules({
@@ -200,6 +201,7 @@ export async function auditRules({
   judgeModel,
   runs = 1,
   onProgress,
+  onRuleDone,
   signal,
   extraMeta = {},
 }) {
@@ -221,6 +223,7 @@ export async function auditRules({
     if (!rule.testable) {
       // Environmental / unprobeable: kept, never scored, still counted for tokens.
       audited.push({ ...rule, quadrant: UNTESTED, probes: [] });
+      onRuleDone?.(audited[audited.length - 1], audited.length, rules.length);
       continue;
     }
     audited.push(
@@ -235,6 +238,7 @@ export async function auditRules({
         track,
       }),
     );
+    onRuleDone?.(audited[audited.length - 1], audited.length, rules.length);
   }
 
   const { promptTokens, source, error } = await promptTokenCount({ promptText, apiKey, targetModel, signal });

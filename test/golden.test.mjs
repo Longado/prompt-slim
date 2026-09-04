@@ -12,6 +12,7 @@ const DIR = new URL("./golden/", import.meta.url);
 const SOURCE = new URL("fable51.md", DIR);
 const EXPECTED = new URL("expected.json", DIR);
 const LAST_RUN = new URL("last-run.report.json", DIR);
+const PARTIAL = new URL("last-run.partial.json", DIR);
 
 const enabled = process.env.GOLDEN === "1";
 const hasKey = !!process.env.ANTHROPIC_API_KEY;
@@ -70,6 +71,13 @@ test("golden set: the seven Fable 5.1 rules land in their known quadrants", { sk
     onProgress: (evt) =>
       process.stderr.write(`[${evt.done}/${evt.total}] ${pad(evt.stage, 10)} ${pad(evt.ruleId, 4)}\n`),
     extraMeta: { goldenSource: expected.source, goldenSourceMd5: actualMd5 },
+    onRuleDone: async (ruleReport, done, total) => {
+      const cur = JSON.parse(await readFile(PARTIAL, "utf8").catch(() => '{"rules":[]}'));
+      cur.rules = [...cur.rules.filter((r) => r.id !== ruleReport.id), ruleReport];
+      cur.progress = { done, total, at: new Date().toISOString() };
+      await writeFile(PARTIAL, `${JSON.stringify(cur, null, 2)}\n`, "utf8");
+      process.stderr.write(`  checkpoint ${done}/${total} ${ruleReport.id} → ${ruleReport.quadrant}\n`);
+    },
   });
 
   // Written before the assertions so a failing run still leaves the evidence behind.
