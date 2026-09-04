@@ -2,7 +2,7 @@
 
 ## 先对账
 ```bash
-cd ~/Desktop/Workspace/01_项目/prompt-slim && git log --oneline | head -1   # 期望 335ff91
+cd ~/Desktop/Workspace/01_项目/prompt-slim && git log --oneline | head -1   # 期望 f5874b3 或更新
 npm test                                                                    # 期望 42 tests, 41 pass, 1 skipped(golden)
 ```
 
@@ -17,7 +17,7 @@ npm test                                                                    # �
 2. `GOLDEN=1 GOLDEN_RUNS=3 node --test test/golden.test.mjs 2>&1 | tee test/golden/golden-run.log`。期望 stderr 打出 7 行 `checkpoint i/7 Px → <quadrant>`,最终表 7 条 expected 与 got 一致。
    - 不一致:先看 last-run.report.json 里该条的 probes[].message 是否打中规则(探针方差),再怀疑 judge,最后才是代码。
 3. 黄金集过了 → `node cli.mjs <你的 CLAUDE.md 或 rules/common 拼接> --target claude-sonnet-5 --out my.report.json`,这是第二篇内容的素材。
-4. 部署(需 Eddie 拍板:公开仓名 / GitHub Pages 还是 Vercel / 计数器用 GoatCounter 还是 umami)。静态目录就是仓库根,入口 `web/index.html`,`src/` 与 `prompts/` 必须一起部署(页面按相对路径 fetch 提示词)。
+4. ~~部署~~ 已上线 2026-09-04:公开仓 github.com/Longado/prompt-slim,GitHub Pages 从 main 根目录发布,入口 https://longado.github.io/prompt-slim/ (根 index.html 跳 web/)。**计数器仍空着**(web/index.html 里有占位注释),需 Eddie 选 GoatCounter 或 umami 并给站点 id。
 5. 发布:`drafts/2026-09-04-Fable5.1系统提示词研究报告.md` + 链接。
 
 ## 已知未做
