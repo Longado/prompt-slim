@@ -1,9 +1,13 @@
 // prompt-slim web —— 浏览器原生 ESM,无框架、无构建、无依赖。
 // 核心在 ../src/;?mock=1 时换成 ./mock-audit.mjs 的同名假实现。
+// 首屏那份跑好的报告来自 ./demo-report.mjs(独立数据源,可整块换成真报告)。
+
+import { DEMO_REPORT, DEMO_PROMPT, DEMO_TAGLINE, DEMO_IS_MOCK } from "./demo-report.mjs";
 
 const MOCK = new URLSearchParams(location.search).get("mock") === "1";
 const KEY_STORE = "prompt-slim.apiKey";
 const CHARS_PER_TOKEN = 3.5; // 兜底估算:全文 token ≈ 字符数 / 3.5
+const TEXTAREA_MAX = 420;    // 自适应高度的上限,超过就自己滚
 
 const QUADRANT_ZH = {
   redundant: "候选死重",
@@ -13,7 +17,17 @@ const QUADRANT_ZH = {
   unknown: "无法判定",
   untested: "留,不测",
 };
+// 卡片上的一行解释,取自 README 的四格表
+const QUADRANT_HINT = {
+  redundant: "模型不看也会做",
+  effective: "留",
+  ineffective: "规则无效,或探针没打中",
+  harmful: "在破坏一个好默认",
+};
 const QUADRANT_ORDER = ["redundant", "effective", "ineffective", "harmful", "unknown"];
+const CARD_QUADRANTS = ["redundant", "effective", "ineffective", "harmful"];
+// 表里的排序:先看要动手的
+const ROW_ORDER = ["redundant", "harmful", "effective", "ineffective", "unknown", "untested"];
 
 // 核心 ruleQuadrant() 会回这两种 note
 const NOTE_ZH = {
@@ -26,6 +40,10 @@ const CATEGORY_ZH = {
   dispositional: "性情",
   environmental: "环境",
   mixed: "混合",
+};
+
+const STAGE_ZH = {
+  start: "开始", probe_gen: "生成探针", run: "跑探针", judge: "裁判", done: "完成",
 };
 
 // ---------- DOM 小工具 ----------
@@ -111,7 +129,6 @@ function syncJudge() {
 // ---------- token 估算 ----------
 function totalTokensFor(text, usage) {
   // 只认核心显式给出的“全文 token”字段;usage.input_tokens 里混着 extract 自己的提示词,不能当全文用。
-  // usage.input / input_tokens 里混着 extract 自己的提示词,不能当全文用;
   // 真实的全文 token 要等第二步 report.tokens.prompt(核心走 API count_tokens)。
   const given = usage?.promptTokens ?? usage?.sourceTokens ?? null;
   if (Number.isFinite(given) && given > 0) return { total: given, source: "核心返回" };
@@ -122,6 +139,147 @@ function ruleTokens(rule) {
   if (Number.isFinite(rule.estTokens)) return rule.estTokens;
   if (!state.promptText.length) return 0;
   return Math.round(((rule.quote?.length ?? 0) / state.promptText.length) * state.totalTokens);
+}
+
+// ---------- 共用渲染件 ----------
+function quoteCell(quote) {
+  const q = quote ?? "";
+  if (q.length <= 90) return h("span", { class: "qt", text: q });
+  return h("details", { class: "quote" },
+    h("summary", { class: "qt" }, q.slice(0, 90) + "…"),
+    h("pre", { text: q }),
+  );
+}
+
+function tagFor(quadrant) {
+  return h("span", { class: `tag q-${quadrant}`, text: QUADRANT_ZH[quadrant] ?? quadrant });
+}
+
+// 四格汇总卡片(固定四张;无法判定/未测另起一行小字)
+function renderCards(counts, el) {
+  el.replaceChildren(...CARD_QUADRANTS.map((q) =>
+    h("div", { class: `card q-${q}` },
+      h("div", { class: "n", text: String(counts[q] ?? 0) }),
+      h("div", { class: "k", text: QUADRANT_ZH[q] }),
+      h("div", { class: "h", text: QUADRANT_HINT[q] }),
+    )));
+}
+
+function extraLine(counts) {
+  return `另有 无法判定 ${counts.unknown ?? 0} 条 · 留,不测(环境类)${counts.untested ?? 0} 条。`;
+}
+
+// 逐规则表体。tok(rule) 给 ≈token;opts.limit 只画前 N 条;opts.sorted 按 ROW_ORDER 排。
+function renderRuleRows(rules, tbody, tok, opts = {}) {
+  let list = rules.slice();
+  if (opts.sorted) list.sort((a, b) => ROW_ORDER.indexOf(a.quadrant) - ROW_ORDER.indexOf(b.quadrant));
+  if (opts.limit) list = list.slice(0, opts.limit);
+  tbody.replaceChildren();
+  for (const r of list) {
+    const detail = h("tr", { class: "detail-row", hidden: true },
+      h("td", { colspan: "6" },
+        r.note ? h("p", { class: "kv" }, h("b", { text: "汇总备注:" }), " ", NOTE_ZH[r.note] ?? r.note) : null,
+        r.probeReasoning ? h("details", { class: "quote" },
+          h("summary", { text: "探针设计 reasoning" }), h("pre", { text: r.probeReasoning })) : null,
+        ...(r.probes ?? []).map(renderProbe),
+        (r.probes ?? []).length ? null : h("p", { class: "note", text: "这条规则没有探针记录(不可测的规则不跑探针)。" })));
+    const btn = h("button", { class: "ghost xs", text: "展开" });
+    btn.addEventListener("click", () => {
+      detail.hidden = !detail.hidden;
+      btn.textContent = detail.hidden ? "展开" : "收起";
+    });
+    tbody.append(
+      h("tr", {},
+        h("td", { class: "q" }, tagFor(r.quadrant)),
+        h("td", { class: "id", text: r.id }),
+        h("td", {}, quoteCell(r.quote)),
+        h("td", { text: CATEGORY_ZH[r.category] ?? r.category ?? "—" }),
+        h("td", { class: "num", text: "≈" + fmt(tok(r)) }),
+        h("td", {}, btn),
+      ),
+      detail,
+    );
+  }
+}
+
+function renderProbe(p, i) {
+  const crit = p.criterion ?? {};
+  const critText = crit.kind === "code"
+    ? `代码测量 ${crit.measure ?? "?"}${crit.arg ? ` /${crit.arg}/` : ""} ${crit.satisfied_when ?? ""} — ${crit.description ?? ""}`
+    : (crit.description ?? "—");
+  const reasoning = p.judge?.reasoning ?? p.judgeReasoning ?? null;
+  const note = p.judge?.note ?? p.note ?? null;
+  const perRun = Array.isArray(p.runs) ? p.runs : null;
+
+  const side = (label, side_) => h("div", {},
+    h("h4", {}, h("span", { text: label }), h("span", { class: "mono", text: `体现该规则:${side_.exhibits ?? "—"}` })),
+    h("pre", { class: "out", text: side_.text ?? "—" }),
+    side_.truncated ? h("p", { class: "note", text: "⚠ 这条回答被 max_tokens 截断了,判定可能不可靠。" }) : null,
+  );
+
+  return h("div", { class: "probe" },
+    h("div", { class: "probe-head" },
+      h("b", { class: "kv", style: "margin:0", text: `探针 ${i + 1}` }),
+      h("span", { class: "note-inline", text: `判定方式:${p.how === "judge" ? "裁判模型" : "代码"}` }),
+      p.quadrant ? tagFor(p.quadrant) : null,
+      perRun && perRun.length > 1 ? h("span", { class: "note-inline", text: `${perRun.length} 次多数票` }) : null,
+    ),
+    h("p", { class: "kv" }, h("b", { text: "用户消息:" }), " ", p.message ?? "—"),
+    h("p", { class: "kv" }, h("b", { text: "判据:" }), " ", critText),
+    h("div", { class: "sbs" },
+      side("裸模型(空系统提示词)", { ...(p.bare ?? {}), exhibits: p.bareExhibits }),
+      side("灌全文", { ...(p.full ?? {}), exhibits: p.fullExhibits }),
+    ),
+    reasoning
+      ? h("details", { class: "quote", style: "margin-top:8px" },
+          h("summary", { text: "裁判 reasoning" }),
+          h("pre", { text: note ? `${reasoning}\n\n裁判备注:${note}` : reasoning })
+        )
+      : (note ? h("p", { class: "note", text: `裁判备注:${note}` }) : null),
+    perRun && perRun.length > 1
+      ? h("details", { class: "quote", style: "margin-top:6px" },
+          h("summary", { text: `逐次结果(n=${perRun.length})` }),
+          h("pre", {
+            text: perRun.map((r, k) =>
+              `#${k + 1} 裸:${r.bareExhibits} / 全文:${r.fullExhibits}` +
+              (r.judge?.reasoning ? `\n   裁判:${r.judge.reasoning}` : "")).join("\n"),
+          }))
+      : null,
+  );
+}
+
+// ---------- 首屏:一份跑好的报告 ----------
+function renderDemo() {
+  const rep = DEMO_REPORT;
+  const counts = rep.summary?.byQuadrant ?? {};
+  const total = rep.tokens?.prompt ?? 0;
+
+  $("demo-tagline").textContent = DEMO_TAGLINE;
+  $("demo-flag").textContent = DEMO_IS_MOCK ? "示例数据" : "真实报告";
+  $("demo-meta").textContent =
+    `被测 ${rep.meta?.targetModel ?? "—"} · 裁判 ${rep.meta?.judgeModel ?? "—"} · 每探针 n=${rep.meta?.runs ?? 1} · 全文 ${fmt(total)} token`;
+
+  renderCards(counts, $("demo-cards"));
+  $("demo-extra").textContent = extraLine(counts);
+
+  const rows = rep.rules ?? [];
+  renderRuleRows(rows, $("demo-table").querySelector("tbody"), (r) => r.estTokens ?? 0,
+    { sorted: true, limit: 5 });
+
+  const dw = rep.summary?.candidateDeadweightTokens ?? 0;
+  $("demo-foot").textContent =
+    `候选死重合计 ≈${fmt(dw)} token,占全文 ≈${pct(dw, total)}。` +
+    `表里列了 ${Math.min(5, rows.length)} / ${rows.length} 条,点「展开」看裸对全文的原始回答。`;
+
+  $("btn-cta").addEventListener("click", () => {
+    $("sec-input").scrollIntoView({ behavior: "smooth", block: "start" });
+    $("prompt-text").focus({ preventScroll: true });
+  });
+  $("btn-demo-fill").addEventListener("click", () => {
+    $("prompt-text").value = DEMO_PROMPT;
+    $("prompt-text").dispatchEvent(new Event("input"));
+    $("sec-input").scrollIntoView({ behavior: "smooth", block: "start" });
+  });
 }
 
 // ---------- 第一步:认规则 ----------
@@ -155,15 +313,6 @@ async function doExtract() {
   } finally {
     btn.disabled = false;
   }
-}
-
-function quoteCell(quote) {
-  const short = quote.length > 80 ? quote.slice(0, 80) + "…" : quote;
-  if (quote.length <= 80) return h("span", { text: quote });
-  return h("details", { class: "quote" },
-    h("summary", { text: short }),
-    h("pre", { text: quote }),
-  );
 }
 
 function renderRules() {
@@ -228,8 +377,7 @@ async function doAudit() {
   setState({ running: true });
   $("btn-audit").disabled = true;
   $("btn-extract").disabled = true;
-  $("btn-abort").hidden = false;
-  $("progress-wrap").hidden = false;
+  $("statusbar").hidden = false;
   $("audit-status").textContent = `跑 ${picked.length} 条规则,每探针 n=${runs}…`;
   renderProgress({ stage: "准备", done: 0, total: 1, tokens: {} });
 
@@ -256,6 +404,7 @@ async function doAudit() {
       setState({ report });
     }
     renderResult();
+    $("sec-demo").hidden = true;   // 有了真报告,首屏那份示例就退场
     $("sec-result").hidden = false;
     $("sec-slim").hidden = true;
     $("audit-status").textContent = "跑完了。";
@@ -272,19 +421,19 @@ async function doAudit() {
     setState({ running: false });
     $("btn-audit").disabled = false;
     $("btn-extract").disabled = false;
-    $("btn-abort").hidden = true;
+    $("statusbar").hidden = true;   // 跑完收起
   }
 }
 
 function renderProgress(evt) {
   const done = Number(evt?.done ?? 0), total = Number(evt?.total ?? 0) || 1;
-  const bar = $("progress-bar");
-  bar.max = total; bar.value = Math.min(done, total);
+  const stage = STAGE_ZH[evt?.stage] ?? evt?.stage ?? "";
+  $("sb-fill").style.width = `${Math.min(100, (done / total) * 100).toFixed(1)}%`;
+  $("sb-stage").textContent = `${stage} ${done}/${total}${evt?.ruleId ? ` · ${evt.ruleId}` : ""}`;
   const t = evt?.tokens ?? {};
-  $("token-line").replaceChildren(
-    h("span", { text: `${evt?.stage ?? ""} ${done}/${total}` }),
-    h("span", { text: `input ${fmt(t.input ?? 0)}` }),
-    h("span", { text: `output ${fmt(t.output ?? 0)}(含思考)` }),
+  $("sb-toks").replaceChildren(
+    h("span", { text: `in ${fmt(t.input ?? 0)}` }),
+    h("span", { text: `out ${fmt(t.output ?? 0)}(含思考)` }),
     h("span", { text: `cache_read ${fmt(t.cache_read ?? 0)}` }),
     Number.isFinite(t.thinking) ? h("span", { text: `thinking ${fmt(t.thinking)}` }) : null,
   );
@@ -296,12 +445,8 @@ function renderResult() {
   const counts = {};
   for (const r of rep.rules) counts[r.quadrant] = (counts[r.quadrant] ?? 0) + 1;
 
-  const order = counts.untested ? [...QUADRANT_ORDER, "untested"] : QUADRANT_ORDER;
-  $("quadrant-cards").replaceChildren(...order.map((q) =>
-    h("div", { class: `card q-${q}` },
-      h("div", { class: "n", text: String(counts[q] ?? 0) }),
-      h("div", { class: "k", text: QUADRANT_ZH[q] ?? q }),
-    )));
+  renderCards(counts, $("quadrant-cards"));
+  $("result-extra").textContent = extraLine(counts);
 
   const dw = rep.summary?.candidateDeadweightTokens
     ?? rep.rules.filter((r) => r.quadrant === "redundant").reduce((s, r) => s + ruleTokens(r), 0);
@@ -312,74 +457,7 @@ function renderResult() {
     `本次调用累计:input ${fmt(spent.input)} / output ${fmt(spent.output)}(含思考) / cache_read ${fmt(spent.cache_read)}。` +
     (rep.tokens?.promptTokensError ? ` 全文 token 计数失败,已退回估算:${rep.tokens.promptTokensError}` : "");
 
-  const tb = $("result-table").querySelector("tbody");
-  tb.replaceChildren();
-  for (const r of rep.rules) {
-    const detail = h("tr", { class: "detail-row", hidden: true },
-      h("td", { colspan: "6" },
-        r.note ? h("p", { class: "kv" }, h("b", { text: "汇总备注:" }), " ", NOTE_ZH[r.note] ?? r.note) : null,
-        r.probeReasoning ? h("details", { class: "quote" },
-          h("summary", { text: "探针设计 reasoning" }), h("pre", { text: r.probeReasoning })) : null,
-        ...(r.probes ?? []).map(renderProbe),
-        (r.probes ?? []).length ? null : h("p", { class: "note", text: "这条规则没有探针记录(不可测的规则不跑探针)。" })));
-    const btn = h("button", { class: "ghost small", text: "展开" });
-    btn.addEventListener("click", () => {
-      detail.hidden = !detail.hidden;
-      btn.textContent = detail.hidden ? "展开" : "收起";
-    });
-    tb.append(
-      h("tr", {},
-        h("td", { class: "id", text: r.id }),
-        h("td", {}, quoteCell(r.quote)),
-        h("td", { text: CATEGORY_ZH[r.category] ?? r.category ?? "—" }),
-        h("td", {}, h("span", { class: `tag q-${r.quadrant}`, text: QUADRANT_ZH[r.quadrant] ?? r.quadrant })),
-        h("td", { class: "num", text: "≈" + fmt(ruleTokens(r)) }),
-        h("td", {}, btn),
-      ),
-      detail,
-    );
-  }
-}
-
-function renderProbe(p, i) {
-  const crit = p.criterion ?? {};
-  const critText = crit.kind === "code"
-    ? `代码测量 ${crit.measure ?? "?"}${crit.arg ? ` /${crit.arg}/` : ""} ${crit.satisfied_when ?? ""} — ${crit.description ?? ""}`
-    : (crit.description ?? "—");
-  const reasoning = p.judge?.reasoning ?? p.judgeReasoning ?? null;
-  const note = p.judge?.note ?? p.note ?? null;
-  const perRun = Array.isArray(p.runs) ? p.runs : null;
-
-  const side = (label, side_) => h("div", {},
-    h("h4", { text: `${label} · 是否体现该规则:${side_.exhibits ?? "—"}` }),
-    h("pre", { class: "out", text: side_.text ?? "—" }),
-    side_.truncated ? h("p", { class: "note", text: "⚠ 这条回答被 max_tokens 截断了,判定可能不可靠。" }) : null,
-  );
-
-  return h("div", { class: "probe" },
-    h("p", { class: "kv" }, h("b", {
-      text: `探针 ${i + 1} · 判定方式:${p.how === "judge" ? "裁判模型" : "代码"}`
-        + (p.quadrant ? ` · 本探针:${QUADRANT_ZH[p.quadrant] ?? p.quadrant}` : "")
-        + (perRun && perRun.length > 1 ? ` · ${perRun.length} 次多数票` : ""),
-    })),
-    h("p", { class: "kv" }, h("b", { text: "用户消息:" }), " ", p.message ?? "—"),
-    h("p", { class: "kv" }, h("b", { text: "判据:" }), " ", critText),
-    h("div", { class: "sbs" },
-      side("裸模型(空系统提示词)", { ...(p.bare ?? {}), exhibits: p.bareExhibits }),
-      side("灌全文", { ...(p.full ?? {}), exhibits: p.fullExhibits }),
-    ),
-    reasoning ? h("p", { class: "kv", style: "margin-top:8px" }, h("b", { text: "裁判 reasoning:" }), " ", reasoning) : null,
-    note ? h("p", { class: "note", text: `裁判备注:${note}` }) : null,
-    perRun && perRun.length > 1
-      ? h("details", { class: "quote", style: "margin-top:6px" },
-          h("summary", { text: `逐次结果(n=${perRun.length})` }),
-          h("pre", {
-            text: perRun.map((r, k) =>
-              `#${k + 1} 裸:${r.bareExhibits} / 全文:${r.fullExhibits}` +
-              (r.judge?.reasoning ? `\n   裁判:${r.judge.reasoning}` : "")).join("\n"),
-          }))
-      : null,
-  );
+  renderRuleRows(rep.rules, $("result-table").querySelector("tbody"), ruleTokens, { sorted: true });
 }
 
 // ---------- 瘦身版本 ----------
@@ -429,21 +507,22 @@ function download(filename, content, type) {
 }
 
 // ---------- 绑定 ----------
+function autosize(el) {
+  el.style.height = "auto";
+  el.style.height = `${Math.min(el.scrollHeight + 2, TEXTAREA_MAX)}px`;
+}
+
 function init() {
+  renderDemo();
+
+  const ta = $("prompt-text");
   const updateLen = () => {
-    const t = $("prompt-text").value;
+    const t = ta.value;
     $("len-note").textContent = `${fmt(t.length)} 字符 ≈ ${fmt(Math.round(t.length / CHARS_PER_TOKEN))} token(估算)`;
+    autosize(ta);
   };
 
-  if (MOCK) {
-    $("mock-note").hidden = false;
-    $("btn-sample").hidden = false;
-    $("btn-sample").addEventListener("click", async () => {
-      const core = await loadCore();
-      $("prompt-text").value = core.sample ?? "";
-      updateLen();
-    });
-  }
+  if (MOCK) $("mock-note").hidden = false;
 
   const saved = localStorage.getItem(KEY_STORE);
   if (saved) { $("api-key").value = saved; $("remember-key").checked = true; }
@@ -456,7 +535,7 @@ function init() {
     if ($("remember-key").checked) localStorage.setItem(KEY_STORE, e.target.value);
   });
 
-  $("prompt-text").addEventListener("input", updateLen);
+  ta.addEventListener("input", updateLen);
   updateLen();
 
   $("target-model").addEventListener("change", syncJudge);
