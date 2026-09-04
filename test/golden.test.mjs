@@ -32,7 +32,17 @@ function pad(s, n) {
 }
 
 test("golden set: the seven Fable 5.1 rules land in their known quadrants", { skip }, async (t) => {
-  const raw = await readFile(SOURCE);
+  // The source prompt is not committed (it is a leaked third-party document); fetch it on
+  // first run from the public archive and verify md5 below before trusting it.
+  const raw = await readFile(SOURCE).catch(async () => {
+    const url = "https://raw.githubusercontent.com/elder-plinius/CL4R1T4S/main/ANTHROPIC/Claude-Fable-5.1.md";
+    process.stderr.write(`  fetching golden source from ${url}\n`);
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`fetch golden source: HTTP ${res.status}`);
+    const buf = Buffer.from(await res.arrayBuffer());
+    await writeFile(SOURCE, buf);
+    return buf;
+  });
   const expected = JSON.parse(await readFile(EXPECTED, "utf8"));
 
   // Ground-truth anchor. The expected quadrants describe THIS corpus; if the file moved,

@@ -78,4 +78,4 @@ GOLDEN=1 node --test test/golden.test.mjs                            # 黄金集
 
 ## 黄金集
 
-`test/golden/fable51.md` 是 2026-09-01 泄露的 Claude Fable 5.1 系统提示词(92K token)。`expected.json` 里 7 条规则的四格结果来自 2026-09-03 的人工实验(`claude -p --bare` 裸对灌全文,各 n=1)。黄金测试跑 3 次取多数票,**7 条四格分类全部一致才算通过**。不一致先怀疑探针方差,再怀疑代码。
+`test/golden/fable51.md` 是 2026-09-01 泄露的 Claude Fable 5.1 系统提示词(92K token),**不随仓库分发**:黄金测试首次运行时从 CL4R1T4S 公共归档下载到本地(已 gitignore),并按 `expected.sourceMd5` 校验。`expected.json` 里 7 条规则的四格结果来自 2026-09-03 的人工实验(`claude -p --bare` 裸对灌全文,各 n=1)。黄金测试跑 3 次取多数票,**7 条四格分类全部一致才算通过**。不一致先怀疑探针方差,再怀疑代码。

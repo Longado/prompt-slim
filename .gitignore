@@ -3,3 +3,4 @@ node_modules/
 *.report.json
 *.partial.json
 test/golden/*.log
+test/golden/fable51.md
