@@ -104,3 +104,9 @@ test("MEASURE_SATISFIED_WHEN pins the measure/satisfied_when pairing the prompt 
   assert.deepEqual(MEASURE_SATISFIED_WHEN.absent, ["absent"]);
   assert.deepEqual(MEASURE_SATISFIED_WHEN.tool_call, ["present", "absent"]);
 });
+
+test("bullets ignores hr lines and inline emphasis openers", () => {
+  assert.equal(measure("---\nplain\n***", "bullets"), 0);
+  assert.equal(measure("*emphasis* at line start\n**bold** too", "bullets"), 0);
+  assert.equal(measure("- real item\n* another\n1. numbered\n一、中文", "bullets"), 4);
+});

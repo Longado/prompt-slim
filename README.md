@@ -18,6 +18,7 @@
 - 默认每探针 n=1。表上写明。
 - 只报 token,不报美元。价格表会腐,让用户自己乘。输出 token 含模型思考(fable 5.1 默认自适应思考且不可关闭)。
 - 仅 Claude。证据全来自 Claude,别的模型性情不同。
+- 每条规则的 token 按 quote 字符占全文比例折算,**系统性低估**(上下文、编号、周围结构都在花 token)。`candidateDeadweightTokens` 是排序信号,不是删掉能省的数。
 - 静态页 + 用户自带 key:提示词只在浏览器与 api.anthropic.com 之间走,不经过任何第三方服务器。
 
 ## 架构
@@ -62,7 +63,7 @@ const report = await audit({
 ```bash
 export ANTHROPIC_API_KEY=...
 node cli.mjs path/to/prompt.txt --target claude-sonnet-5            # 出 JSON 报告到 stdout
-node --test test/                                                    # 无网单测(schema/measure/classify)
+npm test                                                             # 无网单测(schema/measure/classify);Node 25 下裸目录不展开,用 glob
 GOLDEN=1 node --test test/golden.test.mjs                            # 黄金集,需要 key,花钱
 ```
 

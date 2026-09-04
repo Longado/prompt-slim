@@ -153,7 +153,7 @@ export function usageOf(response) {
     output: u.output_tokens ?? 0,
     cache_creation: u.cache_creation_input_tokens ?? 0,
     cache_read: u.cache_read_input_tokens ?? 0,
-    thinking: u.thinking_tokens ?? u.output_tokens_thinking ?? 0,
+    thinking: u.output_tokens_details?.thinking_tokens ?? 0, // fable 5.1 reports it here (verified 2026-09-04)
   };
 }
 
