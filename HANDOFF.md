@@ -3,11 +3,12 @@
 ## 先对账
 ```bash
 cd ~/Desktop/Workspace/01_项目/prompt-slim && git log --oneline | head -1   # 期望 f5874b3 或更新
-npm test                                                                    # 期望 42 tests, 41 pass, 1 skipped(golden)
+npm test                                                                    # 期望 58 tests, 57 pass, 1 skipped(golden)
 ```
 
 ## 现状
-- 核心 src/ 九个模块 + cli.mjs + 41 无网单测:完成。
+- 核心 src/ 九个模块 + cli.mjs + 57 无网单测:完成。
+- provider 抽象(2026-09-05):同一条流水线可走 Anthropic Messages 或 OpenAI 兼容 chat/completions(首个目标 DeepSeek)。见 README「其他模型」。真 key 端到端未跑,脚本是 `test/smoke.mjs`。
 - web/ 静态页:完成,mock 全流程在 Chrome 走通(认规则 → 跑探针 → 四格 → 瘦身版本)。
 - 黄金集:**未通过,原因是 API 余额不足**,9-04 在 P1 第 9 步 400 `credit balance too low`。代码路径本身在真 API 上跑通了 8 步(probe_gen/run/judge 都发生过)。
 - 已加 onRuleDone 断点:重跑时每完成一条规则写 `test/golden/last-run.partial.json`,中途挂不丢。
@@ -22,5 +23,6 @@ npm test                                                                    # �
 
 ## 已知未做
 - 真 key 的页面端到端没人跑过(mock 之外)。黄金集过了之后用真 key 在页面上跑一次示例提示词。
-- api/extract/probe/judge/audit 没有仓库内的可注入 fetch 测试,只有实现 agent 的离线桩。
-- 逐条消融、多模型、账号、支付:v2。
+- web/ 页面没有 provider 选择,仍写死 Anthropic。
+- DeepSeek 上 extract 那一步 max_tokens 被截到 8192(原本要 32000),长提示词可能截断;没实测过多长会炸。
+- 逐条消融、账号、支付:v2。

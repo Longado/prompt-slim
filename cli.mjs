@@ -5,6 +5,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { audit } from "./src/audit.mjs";
 import { extractRules } from "./src/extract.mjs";
+import { isProvider } from "./src/api.mjs";
 
 const USAGE = `prompt-slim — 提示词瘦身
 
@@ -16,26 +17,71 @@ Arguments:
 
 Options:
   --target <model>       model under test, e.g. claude-sonnet-5   (required)
-  --judge <model>        judge model (default claude-opus-5; falls back to
-                         claude-sonnet-5 when it equals --target)
+  --judge <model>        judge model. anthropic: default claude-opus-5, falls back to
+                         claude-sonnet-5 when it equals --target. openai: defaults to
+                         deepseek-reasoner on api.deepseek.com, required elsewhere
+  --provider <name>      anthropic | openai (default anthropic). "openai" means any
+                         OpenAI-compatible /chat/completions endpoint
+  --base-url <url>       API base (default https://api.anthropic.com for anthropic,
+                         https://api.deepseek.com for openai)
+  --key-env <ENV>        env var holding the key (default ANTHROPIC_API_KEY for
+                         anthropic, OPENAI_API_KEY for openai)
+  --judge-provider <n>   provider for extract / probe_gen / judge (default: same as --provider)
+  --judge-base-url <url> base URL for those calls (default: same as --base-url)
+  --judge-key-env <ENV>  env var for their key (default: same as --key-env)
   --runs <n>             repetitions per probe, majority vote (default 1)
   --out <file>           write the JSON report here instead of stdout
   --rules-only           extract rules and print the table; no probes, no cost
   -h, --help             show this message
 
 Environment:
-  ANTHROPIC_API_KEY      required (except for --help)
+  ANTHROPIC_API_KEY      default key for --provider anthropic
+  OPENAI_API_KEY         default key for --provider openai (override with --key-env)
 
 Examples:
   node cli.mjs prompt.md --target claude-sonnet-5
   node cli.mjs prompt.md --target claude-sonnet-5 --runs 3 --out report.json
   node cli.mjs prompt.md --target claude-sonnet-5 --rules-only
+  DEEPSEEK_API_KEY=... node cli.mjs prompt.md --provider openai --key-env DEEPSEEK_API_KEY \
+    --target deepseek-chat --judge deepseek-reasoner
 `;
 
-const FLAGS_WITH_VALUE = new Set(["--target", "--judge", "--runs", "--out"]);
+const FLAGS_WITH_VALUE = new Set([
+  "--target",
+  "--judge",
+  "--runs",
+  "--out",
+  "--provider",
+  "--base-url",
+  "--key-env",
+  "--judge-provider",
+  "--judge-base-url",
+  "--judge-key-env",
+]);
+
+const DEFAULT_KEY_ENV = { anthropic: "ANTHROPIC_API_KEY", openai: "OPENAI_API_KEY" };
+
+function assertProvider(flag, v) {
+  if (!isProvider(v)) throw new Error(`${flag} must be anthropic or openai, got ${v}`);
+  return v;
+}
 
 export function parseArgs(argv) {
-  const opts = { file: null, target: null, judge: null, runs: 1, out: null, rulesOnly: false, help: false };
+  const opts = {
+    file: null,
+    target: null,
+    judge: null,
+    runs: 1,
+    out: null,
+    rulesOnly: false,
+    help: false,
+    provider: "anthropic",
+    baseUrl: null,
+    keyEnv: null,
+    judgeProvider: null,
+    judgeBaseUrl: null,
+    judgeKeyEnv: null,
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "-h" || a === "--help") {
@@ -48,6 +94,12 @@ export function parseArgs(argv) {
       if (a === "--target") opts.target = v;
       if (a === "--judge") opts.judge = v;
       if (a === "--out") opts.out = v;
+      if (a === "--provider") opts.provider = assertProvider(a, v);
+      if (a === "--base-url") opts.baseUrl = v;
+      if (a === "--key-env") opts.keyEnv = v;
+      if (a === "--judge-provider") opts.judgeProvider = assertProvider(a, v);
+      if (a === "--judge-base-url") opts.judgeBaseUrl = v;
+      if (a === "--judge-key-env") opts.judgeKeyEnv = v;
       if (a === "--runs") {
         const n = Number(v);
         if (!Number.isInteger(n) || n < 1) throw new Error(`--runs must be a positive integer, got ${v}`);
@@ -111,9 +163,18 @@ async function main(argv) {
     return 2;
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const keyEnv = opts.keyEnv ?? DEFAULT_KEY_ENV[opts.provider];
+  const apiKey = process.env[keyEnv];
   if (!apiKey) {
-    process.stderr.write("ANTHROPIC_API_KEY is not set\n");
+    process.stderr.write(`${keyEnv} is not set\n`);
+    return 2;
+  }
+
+  const judgeProvider = opts.judgeProvider ?? opts.provider;
+  const judgeKeyEnv = opts.judgeKeyEnv ?? (judgeProvider === opts.provider ? keyEnv : DEFAULT_KEY_ENV[judgeProvider]);
+  const judgeApiKey = process.env[judgeKeyEnv];
+  if (!judgeApiKey) {
+    process.stderr.write(`${judgeKeyEnv} is not set (needed for extract / probe_gen / judge)\n`);
     return 2;
   }
 
@@ -134,7 +195,14 @@ async function main(argv) {
 
   try {
     if (opts.rulesOnly) {
-      const { rules } = await extractRules({ promptText, apiKey, signal: controller.signal });
+      const { rules } = await extractRules({
+        promptText,
+        apiKey: judgeApiKey,
+        provider: judgeProvider,
+        baseUrl: opts.judgeBaseUrl ?? (judgeProvider === opts.provider ? opts.baseUrl ?? undefined : undefined),
+        model: judgeProvider === "openai" ? (opts.judge ?? opts.target ?? undefined) : undefined,
+        signal: controller.signal,
+      });
       printRulesTable(rules);
       return 0;
     }
@@ -144,6 +212,11 @@ async function main(argv) {
       apiKey,
       targetModel: opts.target,
       judgeModel: opts.judge ?? undefined,
+      provider: opts.provider,
+      baseUrl: opts.baseUrl ?? undefined,
+      judgeProvider,
+      judgeBaseUrl: opts.judgeBaseUrl ?? undefined,
+      judgeApiKey,
       runs: opts.runs,
       onProgress: progressLine,
       signal: controller.signal,

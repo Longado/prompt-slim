@@ -1,7 +1,7 @@
 // LLM judgment #2 of 3: design 1-3 user messages that would expose whether a rule is followed.
 // The model proposes the criterion; code decides whether that criterion is actually measurable.
 
-import { callMessages, toolUseOf, usageOf } from "./api.mjs";
+import { callMessages, toolInputOf, usageOf } from "./api.mjs";
 import { loadPrompt } from "./prompts.mjs";
 import { SUBMIT_PROBES, validate } from "./schemas.mjs";
 import { MEASURE_SATISFIED_WHEN, REGEX_MEASURES } from "./measure.mjs";
@@ -67,15 +67,25 @@ function userContent({ rule, contextWindow }) {
 }
 
 /**
- * genProbes({ rule, contextWindow, apiKey, model, signal })
+ * genProbes({ rule, contextWindow, apiKey, model, provider, baseUrl, signal })
  *   -> { reasoning, probes, promptVersion, model, usage }
  */
-export async function genProbes({ rule, contextWindow, apiKey, model = "claude-opus-5", signal }) {
+export async function genProbes({
+  rule,
+  contextWindow,
+  apiKey,
+  model = "claude-opus-5",
+  provider = "anthropic",
+  baseUrl,
+  signal,
+}) {
   if (!rule?.quote) throw new Error("genProbes: rule.quote is required");
 
   const { text: system, version: promptVersion } = await loadPrompt("probe_gen");
 
   const response = await callMessages({
+    provider,
+    baseUrl,
     apiKey,
     signal,
     body: {
@@ -88,15 +98,15 @@ export async function genProbes({ rule, contextWindow, apiKey, model = "claude-o
     },
   });
 
-  const block = toolUseOf(response, SUBMIT_PROBES.name);
-  if (!block) throw new Error(`probe generation returned no submit_probes tool call for ${rule.id ?? rule.quote}`);
+  const input = toolInputOf(response, SUBMIT_PROBES.name);
+  if (!input) throw new Error(`probe generation returned no submit_probes tool call for ${rule.id ?? rule.quote}`);
 
-  const errs = validate(block.input, SUBMIT_PROBES.input_schema);
+  const errs = validate(input, SUBMIT_PROBES.input_schema);
   if (errs.length) throw new Error(`submit_probes failed validation: ${errs.join("; ")}`);
 
   return {
-    reasoning: block.input.reasoning,
-    probes: block.input.probes.map(downgrade),
+    reasoning: input.reasoning,
+    probes: input.probes.map(downgrade),
     promptVersion,
     model,
     usage: usageOf(response),

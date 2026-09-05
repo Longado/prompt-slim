@@ -1,7 +1,7 @@
 // LLM judgment #3 of 3: does each of two responses follow one rule.
 // Presented as a blind pair in random order, answered as two independent binaries.
 
-import { callMessages, toolUseOf, usageOf, ZERO_USAGE } from "./api.mjs";
+import { callMessages, toolInputOf, usageOf, ZERO_USAGE } from "./api.mjs";
 import { loadPrompt } from "./prompts.mjs";
 import { SUBMIT_VERDICT, validate } from "./schemas.mjs";
 
@@ -39,7 +39,7 @@ const UNKNOWN = (note) => ({
 
 /**
  * judgePair({ rule, criterion, message, bareText, fullText, bareTruncated, fullTruncated,
- *             apiKey, judgeModel, signal })
+ *             apiKey, judgeModel, provider, baseUrl, signal })
  *   -> { bareExhibits, fullExhibits, reasoning, note, order, usage }
  * Either side empty or cut off -> no call at all, straight to unknown: a judge asked about a
  * truncated response answers confidently and wrongly.
@@ -54,6 +54,8 @@ export async function judgePair({
   fullTruncated = false,
   apiKey,
   judgeModel,
+  provider = "anthropic",
+  baseUrl,
   signal,
 }) {
   if (!usable(bareText, bareTruncated)) return UNKNOWN("bare response empty or truncated; not judged");
@@ -66,6 +68,8 @@ export async function judgePair({
   const order = bareIsA ? { a: "bare", b: "full" } : { a: "full", b: "bare" };
 
   const response = await callMessages({
+    provider,
+    baseUrl,
     apiKey,
     signal,
     body: {
@@ -89,13 +93,24 @@ export async function judgePair({
     },
   });
 
-  const block = toolUseOf(response, SUBMIT_VERDICT.name);
-  if (!block) throw new Error("judge returned no submit_verdict tool call");
+  // A judge that answered in prose instead of calling the tool (possible on OpenAI-compatible
+  // endpoints, where a thinking model only gets tool_choice:"auto") is not a verdict: it is an
+  // unknown. Only that one failure is swallowed; a malformed tool call still throws.
+  let input;
+  try {
+    input = toolInputOf(response, SUBMIT_VERDICT.name);
+  } catch (err) {
+    if (err.message === "model did not call the tool") {
+      return { ...UNKNOWN("judge did not call tool"), usage: usageOf(response) };
+    }
+    throw err;
+  }
+  if (!input) throw new Error("judge returned no submit_verdict tool call");
 
-  const errs = validate(block.input, SUBMIT_VERDICT.input_schema);
+  const errs = validate(input, SUBMIT_VERDICT.input_schema);
   if (errs.length) throw new Error(`submit_verdict failed validation: ${errs.join("; ")}`);
 
-  const { a_exhibits, b_exhibits, reasoning, note } = block.input;
+  const { a_exhibits, b_exhibits, reasoning, note } = input;
 
   return {
     bareExhibits: bareIsA ? a_exhibits : b_exhibits,
