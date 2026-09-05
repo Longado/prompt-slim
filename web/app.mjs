@@ -1,6 +1,7 @@
 // prompt-slim web —— 浏览器原生 ESM,无框架、无构建、无依赖。
 // 核心在 ../src/;?mock=1 时换成 ./mock-audit.mjs 的同名假实现。
-// 首屏那份跑好的报告来自 ./demo-report.mjs(独立数据源,可整块换成真报告)。
+// 首屏只有:标题 / 粘贴框 / 跑一次 / 设置折叠。示例工单来自 ./demo-report.mjs,
+// 默认不渲染,点了 before/after 旁边的「看完整示例」才画出来。
 
 import { DEMO_REPORT, DEMO_PROMPT, DEMO_TAGLINE, DEMO_IS_MOCK } from "./demo-report.mjs";
 
@@ -256,7 +257,14 @@ function renderProbe(p, i) {
   );
 }
 
-// ---------- 首屏:一份跑好的报告 ----------
+// ---------- 示例工单:点「看完整示例」才渲染 ----------
+let demoDrawn = false;
+function showDemo() {
+  if (!demoDrawn) { renderDemo(); demoDrawn = true; }
+  $("sec-demo").hidden = false;
+  $("sec-demo").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 function renderDemo() {
   const rep = DEMO_REPORT;
   const counts = rep.summary?.byQuadrant ?? {};
@@ -284,13 +292,13 @@ function renderDemo() {
     `表里列了 ${Math.min(5, rows.length)} / ${rows.length} 条,点「展开」看裸对全文的原始回答。`;
 
   $("btn-cta").addEventListener("click", () => {
-    $("sec-input").scrollIntoView({ behavior: "smooth", block: "start" });
+    $("sec-hero").scrollIntoView({ behavior: "smooth", block: "start" });
     $("prompt-text").focus({ preventScroll: true });
   });
   $("btn-demo-fill").addEventListener("click", () => {
     $("prompt-text").value = DEMO_PROMPT;
     $("prompt-text").dispatchEvent(new Event("input"));
-    $("sec-input").scrollIntoView({ behavior: "smooth", block: "start" });
+    $("sec-hero").scrollIntoView({ behavior: "smooth", block: "start" });
   });
 }
 
@@ -299,11 +307,14 @@ async function doExtract() {
   clearError();
   const promptText = $("prompt-text").value;
   const apiKey = $("api-key").value.trim();
-  if (!promptText.trim()) return showError("先把系统提示词贴进上面的框里。");
-  if (!apiKey && !MOCK) return showError("需要 Anthropic API key。它只在你的浏览器和 api.anthropic.com 之间用,不会发去别处。");
+  if (!promptText.trim()) { showError("先把系统提示词贴进上面的框里。"); return false; }
+  if (!apiKey && !MOCK) {
+    $("setup").open = true;
+    showError("需要 Anthropic API key(在按钮旁边的「设置」里填)。它只在你的浏览器和 api.anthropic.com 之间用,不会发去别处。");
+    return false;
+  }
 
-  const btn = $("btn-extract");
-  btn.disabled = true;
+  $("btn-run").disabled = true;
   $("extract-status").textContent = "正在认规则…(1 次 LLM 调用)";
   try {
     const core = await loadCore();
@@ -319,12 +330,20 @@ async function doExtract() {
     $("sec-slim").hidden = true;
     $("extract-status").textContent = `认出 ${rules.length} 条。`;
     $("sec-rules").scrollIntoView({ behavior: "smooth", block: "start" });
+    return true;
   } catch (e) {
     $("extract-status").textContent = "";
-    showError("第一步失败。", e.message);
+    showError("认规则这一步失败。", e.message);
+    return false;
   } finally {
-    btn.disabled = false;
+    $("btn-run").disabled = false;
   }
+}
+
+// 首屏那颗按钮:认规则 → 直接接着跑探针(勾选默认是「可测且非环境类」)
+async function doRun() {
+  const ok = await doExtract();
+  if (ok) await doAudit();
 }
 
 function renderRules() {
@@ -379,7 +398,7 @@ async function doAudit() {
   const picked = state.rules.filter((r) => state.selected.has(r.id));
   if (!picked.length) return showError("一条都没勾。至少勾一条可测的规则再跑。");
   const apiKey = $("api-key").value.trim();
-  if (!apiKey && !MOCK) return showError("需要 Anthropic API key。");
+  if (!apiKey && !MOCK) { $("setup").open = true; return showError("需要 Anthropic API key(在「设置」里填)。"); }
 
   const targetModel = $("target-model").value;
   const judgeModel = judgeFor(targetModel);
@@ -388,7 +407,7 @@ async function doAudit() {
   controller = new AbortController();
   setState({ running: true });
   $("btn-audit").disabled = true;
-  $("btn-extract").disabled = true;
+  $("btn-run").disabled = true;
   $("statusbar").hidden = false;
   $("statusbar").classList.remove("done");
   $("btn-abort").hidden = false;
@@ -431,13 +450,13 @@ async function doAudit() {
     } else {
       $("audit-status").textContent = "";
       settleStatus("失败 · 本次累计");
-      showError("第二步失败。", e.message);
+      showError("跑探针这一步失败。", e.message);
     }
   } finally {
     controller = null;
     setState({ running: false });
     $("btn-audit").disabled = false;
-    $("btn-extract").disabled = false;
+    $("btn-run").disabled = false;
   }
 }
 
@@ -536,11 +555,10 @@ function autosize(el) {
 }
 
 function init() {
-  renderDemo();
-
   const ta = $("prompt-text");
   const updateLen = () => {
     const t = ta.value;
+    $("len-note").hidden = t.length === 0;
     $("len-note").textContent = `${fmt(t.length)} 字符 ≈ ${fmt(Math.round(t.length / CHARS_PER_TOKEN))} token(估算)`;
     autosize(ta);
   };
@@ -564,8 +582,9 @@ function init() {
   $("target-model").addEventListener("change", syncJudge);
   syncJudge();
 
-  $("btn-extract").addEventListener("click", doExtract);
+  $("btn-run").addEventListener("click", doRun);
   $("btn-audit").addEventListener("click", doAudit);
+  $("btn-show-demo").addEventListener("click", showDemo);
   $("btn-abort").addEventListener("click", () => controller?.abort());
   $("btn-slim").addEventListener("click", doSlim);
   $("btn-check-testable").addEventListener("click", () => {

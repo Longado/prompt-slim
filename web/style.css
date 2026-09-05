@@ -1,4 +1,4 @@
-/* prompt-slim web v3 —— 工程工单 / 仪器面板。无框架、无构建。
+/* prompt-slim web v4 —— 工程工单 / 仪器面板。无框架、无构建。
    纸与墨:暖白纸、近黑墨,一个信号色(安全黄)。
    直角、细线、实心色块;不用渐变、不用模糊阴影、不用圆角。
    浅色/深色两套 token 都在 :root 里定义(--l-* / --d-*),媒体查询只做重新映射。 */
@@ -55,6 +55,8 @@
           "Noto Sans SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo,
           Consolas, "Liberation Mono", monospace;
+  --serif: "Newsreader", "Fraunces", Georgia, "Songti SC", "Noto Serif SC",
+           "Source Han Serif SC", serif;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -137,6 +139,71 @@ section {
 .sec-head::after {
   content: ""; flex: 1 1 auto; height: 0; border-top: 1px solid var(--line);
   transform: translateY(-3px);
+}
+
+/* ---- 首屏:标题 · 框 · 按钮 · 设置 ---- */
+
+.hero, .ba { border-bottom: 0; }
+.hero {
+  display: flex; flex-direction: column; justify-content: center;
+  min-height: calc(100svh - 64px); /* 顶栏 42 + wrap 上内边距 22:首屏正好占满一屏 */
+  padding-top: 24px; padding-bottom: 34px; margin-bottom: 0;
+}
+
+.hero-top { display: flex; align-items: flex-start; gap: 24px; margin: 0 0 22px; }
+
+h1 {
+  font-size: 34px; line-height: 1.25; font-weight: 500; margin: 0;
+  letter-spacing: -.01em; flex: 1 1 auto; min-width: 0;
+}
+h1 em {
+  font-family: var(--serif); font-style: italic; font-weight: 400;
+  font-size: 1.06em; letter-spacing: 0;
+}
+
+.spiral { flex: none; width: 96px; height: 96px; margin-top: 2px; }
+.spiral path { fill: none; stroke: var(--ink-3); stroke-width: 1; }
+
+.hero textarea { min-height: 132px; }
+
+.hero-actions {
+  display: flex; align-items: flex-start; gap: 10px 16px;
+  flex-wrap: wrap; margin-top: 14px;
+}
+.hero-actions #extract-status { padding-top: 8px; }
+
+details.setup { flex: 1 1 240px; min-width: 0; font-size: 12px; }
+details.setup > summary {
+  cursor: pointer; list-style: none; color: var(--ink-3);
+  padding-top: 8px; display: inline-block;
+}
+details.setup > summary::-webkit-details-marker { display: none; }
+details.setup > summary::after { content: " [+]"; font-family: var(--mono); }
+details.setup[open] > summary::after { content: " [-]"; }
+.setup-body {
+  margin: 10px 0 0; padding: 12px; border: 1px solid var(--line); background: var(--paper-2);
+}
+.setup-body .banner { margin-bottom: 12px; }
+.setup-body .field:last-of-type { margin-bottom: 0; }
+
+/* ---- 一条 before / after ---- */
+
+.ba { padding-bottom: 30px; }
+.ba-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.ba-col { border: 1px solid var(--rule); background: var(--paper); }
+.ba-label {
+  font-size: 9.5px; font-weight: 500; letter-spacing: .18em;
+  color: var(--ink-3); padding: 6px 10px; border-bottom: 1px solid var(--line);
+}
+.ba-body { padding: 8px 0; }
+.ba-line {
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.6;
+  padding: 3px 10px; word-break: break-word;
+}
+.ba-line.dead { background: var(--signal); color: var(--signal-on); }
+.ba-foot {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin-top: 10px; font-size: 11.5px; color: var(--ink-3);
 }
 
 .note { font-size: 12px; color: var(--ink-3); margin: 6px 0 0; line-height: 1.55; }
@@ -240,8 +307,8 @@ textarea:focus, input:focus, select:focus {
 }
 
 .field { margin: 0 0 12px; }
-.row3 { display: grid; gap: 12px; grid-template-columns: 1fr 220px 92px; align-items: start; }
-@media (max-width: 620px) { .row3 { grid-template-columns: 1fr; } }
+.row2 { display: grid; gap: 12px; grid-template-columns: 1fr 92px; align-items: start; }
+@media (max-width: 620px) { .row2 { grid-template-columns: 1fr; } }
 
 .check { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--ink-2);
   margin: 0; font-family: var(--sans); text-transform: none; letter-spacing: 0; }
@@ -390,10 +457,11 @@ footer {
   margin-top: 4px; padding-top: 16px;
   font-size: 12.5px; color: var(--ink-2);
 }
-footer h2 {
-  font-size: 11px; text-transform: uppercase; letter-spacing: .14em;
-  color: var(--ink-3); margin-bottom: 10px; font-family: var(--mono); font-weight: 500;
+.bounds-wrap > summary {
+  font-family: var(--mono); font-size: 11px; text-transform: uppercase;
+  letter-spacing: .14em; color: var(--ink-3);
 }
+.bounds-wrap[open] > summary { margin-bottom: 10px; }
 .bounds { list-style: none; margin: 0; padding: 0; border: 1px solid var(--rule); }
 .bounds li {
   display: flex; gap: 12px; padding: 8px 10px; line-height: 1.55;
@@ -414,8 +482,16 @@ footer strong { color: var(--ink); font-weight: 600; }
   .spec > div:last-child:nth-child(odd) { grid-column: 1 / -1; }
   .strip { grid-template-columns: repeat(2, 1fr); }
 }
+@media (max-width: 620px) {
+  .ba-cols { grid-template-columns: 1fr; }
+  .hero-top { gap: 16px; }
+  .spiral { width: 68px; height: 68px; }
+  h1 { font-size: 27px; }
+}
 @media (max-width: 460px) {
   .wrap { padding: 16px 12px 80px; }
+  .hero { padding-top: 24px; }
+  .hero-actions #extract-status { padding-top: 0; }
   .tagline { font-size: 14.5px; }
   .cta button { width: 100%; }
   .topbar-in { gap: 8px; }
