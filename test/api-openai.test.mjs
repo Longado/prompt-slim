@@ -17,13 +17,19 @@ import {
 } from "../src/api.mjs";
 import { auditRules, resolveJudgeModel } from "../src/audit.mjs";
 
-/** Records every request, replies with the queued responses in order. */
+/**
+ * Records every request, replies with the queued responses in order.
+ * A reply may be a function of the request body — judgePair randomises which response is
+ * shown as A, so a fixed verdict there would make the test flaky by construction.
+ */
 function stub(...replies) {
   const calls = [];
   let i = 0;
   setFetch(async (url, init) => {
-    calls.push({ url, headers: init.headers, body: JSON.parse(init.body) });
-    const r = replies[Math.min(i++, replies.length - 1)];
+    const body = JSON.parse(init.body);
+    calls.push({ url, headers: init.headers, body });
+    const queued = replies[Math.min(i++, replies.length - 1)];
+    const r = typeof queued === "function" ? queued(body) : queued;
     return {
       ok: r.status === undefined || r.status === 200,
       status: r.status ?? 200,
@@ -244,7 +250,16 @@ test("auditRules drives the whole pipeline over the openai provider", async () =
     }),
     say("bare answer"),
     say("full answer"),
-    toolCall("submit_verdict", { reasoning: "b only", a_exhibits: "no", b_exhibits: "yes" }),
+    // "bare does not follow the rule, full does", answered against whichever slot bare landed in.
+    (body) => {
+      const shown = body.messages.at(-1).content;
+      const bareIsA = shown.includes("Response A:\nbare answer");
+      return toolCall("submit_verdict", {
+        reasoning: "only the one with the prompt follows it",
+        a_exhibits: bareIsA ? "no" : "yes",
+        b_exhibits: bareIsA ? "yes" : "no",
+      });
+    },
   );
 
   const report = await auditRules({
