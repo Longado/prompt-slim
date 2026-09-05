@@ -21,6 +21,14 @@ npm test                                                                    # �
 4. ~~部署~~ 已上线 2026-09-04:公开仓 github.com/Longado/prompt-slim,GitHub Pages 从 main 根目录发布,入口 https://longado.github.io/prompt-slim/ (根 index.html 跳 web/)。**计数器仍空着**(web/index.html 里有占位注释),需 Eddie 选 GoatCounter 或 umami 并给站点 id。
 5. 发布:`drafts/2026-09-04-Fable5.1系统提示词研究报告.md` + 链接。
 
+
+## 2026-09-05 晚:OpenAI 兼容 provider 已落地并用 DeepSeek 真跑过一次
+- commit dfab267 + fc63ad8。58 单测。`--provider openai --key-env DEEPSEEK_API_KEY --target deepseek-chat --judge deepseek-reasoner`。
+- 冒烟(黄金集前 2 条、runs=1)端到端跑通:probe_gen → bare/full → reasoner 裁判(auto 模式)→ 四格。DeepSeek 前缀缓存命中 317K/389K 输入。
+- 结果本身就是发现:P2「一词作答拒绝短形式」在 DeepSeek 上 bare/full 三个探针全是一词答("No." "Yes." "Justified."),落「未观察到效果」——同一份 Fable 提示词的这条规则对 DeepSeek 不起作用。四格只对被测模型成立,README 已改口径。
+- P1 落 unknown 的原因是三探针分歧,其中 probe2 裁判(reasoner, auto)没调工具 → unknown。**下一个小修**:judge.mjs 里"没调工具"先重发一次再判 unknown。
+- 黄金集(Fable)仍卡 Anthropic 余额,未过。
+
 ## 已知未做
 - 真 key 的页面端到端没人跑过(mock 之外)。黄金集过了之后用真 key 在页面上跑一次示例提示词。
 - web/ 页面没有 provider 选择,仍写死 Anthropic。
