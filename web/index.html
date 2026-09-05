@@ -8,7 +8,7 @@
 <meta name="description" content="对系统提示词里的每条规则跑裸模型/灌全文两次探针,分出候选死重、在起作用、未观察到效果、疑似反效四格。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="./style.css">
 </head>
 <body>
@@ -27,20 +27,17 @@
 <div class="wrap">
 
 <div id="banner" class="banner err" hidden></div>
-<div id="mock-note" class="banner info" hidden>
-  演示模式(<code>?mock=1</code>):不联网、不花钱、不需要 key,规则与报告都是假的,只用来走通页面流程。
-</div>
+<div id="mock-note" class="banner info" hidden>演示模式(<code>?mock=1</code>):不联网、不花钱、不需要 key,规则与报告都是假的,只用来走通页面流程。</div>
 
-<!-- ============ 0. 首屏:一份跑好的报告 ============ -->
-<section id="sec-demo" class="demo">
+<!-- ============ 00. 首屏:一份跑好的报告 ============ -->
+<section id="sec-demo">
+  <div class="sec-head"><span class="secno mono">00</span><h2>示例工单</h2></div>
+
   <p class="tagline" id="demo-tagline"></p>
 
-  <div class="demo-bar">
-    <span class="pill" id="demo-flag">示例数据</span>
-    <span class="meta mono" id="demo-meta"></span>
-  </div>
+  <dl class="spec" id="demo-spec"></dl>
 
-  <div class="cards" id="demo-cards"></div>
+  <div class="strip" id="demo-strip"></div>
   <p class="micro" id="demo-extra"></p>
 
   <div class="table-wrap">
@@ -70,9 +67,9 @@
 
 <main>
 
-<!-- ============ 1. 输入 ============ -->
+<!-- ============ 01. 输入 ============ -->
 <section id="sec-input">
-  <div class="sec-head"><span class="step">1</span><h2>输入</h2></div>
+  <div class="sec-head"><span class="secno mono">01</span><h2>输入</h2></div>
 
   <div class="field">
     <label for="prompt-text">系统提示词全文</label>
@@ -130,9 +127,9 @@
   </div>
 </section>
 
-<!-- ============ 2. 规则表 ============ -->
+<!-- ============ 02. 规则 ============ -->
 <section id="sec-rules" hidden>
-  <div class="sec-head"><span class="step">2</span><h2>认出的规则</h2></div>
+  <div class="sec-head"><span class="secno mono">02</span><h2>规则</h2><span class="sec-sub">认出的规则</span></div>
   <div class="stats" id="rule-stats"></div>
   <div class="actions" style="margin-bottom:10px">
     <button type="button" id="btn-check-testable" class="ghost xs">只勾可测的</button>
@@ -163,10 +160,10 @@
   <p class="note">输出 token 含模型思考(fable 5.1 默认自适应思考且不可关闭)。只报 token,不报美元——价格表会腐,自己乘。</p>
 </section>
 
-<!-- ============ 3. 结果 ============ -->
+<!-- ============ 03. 探针 ============ -->
 <section id="sec-result" hidden>
-  <div class="sec-head"><span class="step">3</span><h2>四格</h2></div>
-  <div class="cards" id="quadrant-cards"></div>
+  <div class="sec-head"><span class="secno mono">03</span><h2>探针</h2><span class="sec-sub">四格与逐规则证据</span></div>
+  <div class="strip" id="quadrant-cards"></div>
   <p class="micro" id="result-extra"></p>
   <p class="note" id="deadweight-note"></p>
 
@@ -195,9 +192,9 @@
   </div>
 </section>
 
-<!-- ============ 4. 瘦身版本 ============ -->
+<!-- ============ 04. 结果 ============ -->
 <section id="sec-slim" hidden>
-  <div class="sec-head"><span class="step">4</span><h2>瘦身版本(候选)</h2></div>
+  <div class="sec-head"><span class="secno mono">04</span><h2>结果</h2><span class="sec-sub">瘦身版本(候选)</span></div>
   <p class="note" id="slim-note"></p>
   <div id="slim-warn" class="banner warn" hidden></div>
   <textarea id="slim-text" rows="12" spellcheck="false" readonly></textarea>
@@ -213,12 +210,12 @@
 
 <footer>
   <h2>诚实边界</h2>
-  <ul>
-    <li>裸对全文只回答「这个行为是不是模型自带的」,<strong>回答不了「是你哪条规则造成的」</strong>。灌了才出现的行为归到瞄准的那条上是假设。逐条消融是 v2。</li>
-    <li>默认每探针 n=1。表上写明。</li>
-    <li>只报 token,不报美元。价格表会腐,让用户自己乘。输出 token 含模型思考(fable 5.1 默认自适应思考且不可关闭)。</li>
-    <li>仅 Claude。证据全来自 Claude,别的模型性情不同。</li>
-  </ul>
+  <ol class="bounds">
+    <li><span class="bn mono">01</span><span>裸对全文只回答「这个行为是不是模型自带的」,<strong>回答不了「是你哪条规则造成的」</strong>。灌了才出现的行为归到瞄准的那条上是假设。逐条消融是 v2。</span></li>
+    <li><span class="bn mono">02</span><span>默认每探针 n=1。表上写明。</span></li>
+    <li><span class="bn mono">03</span><span>只报 token,不报美元。价格表会腐,让用户自己乘。输出 token 含模型思考(fable 5.1 默认自适应思考且不可关闭)。</span></li>
+    <li><span class="bn mono">04</span><span>仅 Claude。证据全来自 Claude,别的模型性情不同。</span></li>
+  </ol>
   <p class="foot-links">
     问题与反馈 → <a href="https://github.com/Longado/prompt-slim/issues" rel="noopener">GitHub Issues</a>
   </p>
@@ -227,12 +224,11 @@
 
 </div>
 
-<!-- ============ 跑的时候钉在视口底部的状态栏 ============ -->
+<!-- ============ 状态栏:跑的时候钉在视口底部,跑完塌成一行常驻小结 ============ -->
 <div id="statusbar" class="statusbar" hidden>
-  <div class="sb-fill" id="sb-fill"></div>
+  <div class="sb-track"><div class="sb-fill" id="sb-fill"></div></div>
   <div class="sb-in">
-    <span class="sb-dot" aria-hidden="true"></span>
-    <span class="sb-stage" id="sb-stage"></span>
+    <span class="sb-stage mono" id="sb-stage"></span>
     <span class="sb-toks mono" id="sb-toks"></span>
     <button type="button" id="btn-abort" class="ghost xs">中止</button>
   </div>

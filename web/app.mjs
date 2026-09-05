@@ -155,14 +155,20 @@ function tagFor(quadrant) {
   return h("span", { class: `tag q-${quadrant}`, text: QUADRANT_ZH[quadrant] ?? quadrant });
 }
 
-// 四格汇总卡片(固定四张;无法判定/未测另起一行小字)
-function renderCards(counts, el) {
+// 四格结果条:一条横向 1x4 带边框条带(无法判定/未测另起一行小字)
+function renderStrip(counts, el) {
   el.replaceChildren(...CARD_QUADRANTS.map((q) =>
-    h("div", { class: `card q-${q}` },
+    h("div", { class: `cell q-${q}` },
       h("div", { class: "n", text: String(counts[q] ?? 0) }),
       h("div", { class: "k", text: QUADRANT_ZH[q] }),
       h("div", { class: "h", text: QUADRANT_HINT[q] }),
     )));
+}
+
+// 工单头:带边框的键值网格(标签小号大写 mono)
+function renderSpec(el, pairs) {
+  el.replaceChildren(...pairs.map(([k, v]) =>
+    h("div", {}, h("dt", { text: k }), h("dd", { text: v }))));
 }
 
 function extraLine(counts) {
@@ -211,8 +217,10 @@ function renderProbe(p, i) {
   const note = p.judge?.note ?? p.note ?? null;
   const perRun = Array.isArray(p.runs) ? p.runs : null;
 
-  const side = (label, side_) => h("div", {},
-    h("h4", {}, h("span", { text: label }), h("span", { class: "mono", text: `体现该规则:${side_.exhibits ?? "—"}` })),
+  const side = (id, gloss, side_) => h("div", {},
+    h("h4", {},
+      h("span", {}, h("span", { class: "side-id", text: id }), " ", h("span", { class: "side-gloss", text: gloss })),
+      h("span", { class: "mono", text: `体现该规则:${side_.exhibits ?? "—"}` })),
     h("pre", { class: "out", text: side_.text ?? "—" }),
     side_.truncated ? h("p", { class: "note", text: "⚠ 这条回答被 max_tokens 截断了,判定可能不可靠。" }) : null,
   );
@@ -227,8 +235,8 @@ function renderProbe(p, i) {
     h("p", { class: "kv" }, h("b", { text: "用户消息:" }), " ", p.message ?? "—"),
     h("p", { class: "kv" }, h("b", { text: "判据:" }), " ", critText),
     h("div", { class: "sbs" },
-      side("裸模型(空系统提示词)", { ...(p.bare ?? {}), exhibits: p.bareExhibits }),
-      side("灌全文", { ...(p.full ?? {}), exhibits: p.fullExhibits }),
+      side("BARE", "裸模型(空系统提示词)", { ...(p.bare ?? {}), exhibits: p.bareExhibits }),
+      side("FULL", "灌全文", { ...(p.full ?? {}), exhibits: p.fullExhibits }),
     ),
     reasoning
       ? h("details", { class: "quote", style: "margin-top:8px" },
@@ -255,11 +263,15 @@ function renderDemo() {
   const total = rep.tokens?.prompt ?? 0;
 
   $("demo-tagline").textContent = DEMO_TAGLINE;
-  $("demo-flag").textContent = DEMO_IS_MOCK ? "示例数据" : "真实报告";
-  $("demo-meta").textContent =
-    `被测 ${rep.meta?.targetModel ?? "—"} · 裁判 ${rep.meta?.judgeModel ?? "—"} · 每探针 n=${rep.meta?.runs ?? 1} · 全文 ${fmt(total)} token`;
+  renderSpec($("demo-spec"), [
+    ["被测", rep.meta?.targetModel ?? "—"],
+    ["裁判", rep.meta?.judgeModel ?? "—"],
+    ["每探针 n", String(rep.meta?.runs ?? 1)],
+    ["全文 token", fmt(total)],
+    ["数据来源", DEMO_IS_MOCK ? "示例数据" : "真实报告"],
+  ]);
 
-  renderCards(counts, $("demo-cards"));
+  renderStrip(counts, $("demo-strip"));
   $("demo-extra").textContent = extraLine(counts);
 
   const rows = rep.rules ?? [];
@@ -378,6 +390,8 @@ async function doAudit() {
   $("btn-audit").disabled = true;
   $("btn-extract").disabled = true;
   $("statusbar").hidden = false;
+  $("statusbar").classList.remove("done");
+  $("btn-abort").hidden = false;
   $("audit-status").textContent = `跑 ${picked.length} 条规则,每探针 n=${runs}…`;
   renderProgress({ stage: "准备", done: 0, total: 1, tokens: {} });
 
@@ -408,12 +422,15 @@ async function doAudit() {
     $("sec-result").hidden = false;
     $("sec-slim").hidden = true;
     $("audit-status").textContent = "跑完了。";
+    settleStatus("完成 · 本次累计");
     $("sec-result").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) {
     if (e?.name === "AbortError") {
       $("audit-status").textContent = "已中止。";
+      settleStatus("已中止 · 本次累计");
     } else {
       $("audit-status").textContent = "";
+      settleStatus("失败 · 本次累计");
       showError("第二步失败。", e.message);
     }
   } finally {
@@ -421,8 +438,14 @@ async function doAudit() {
     setState({ running: false });
     $("btn-audit").disabled = false;
     $("btn-extract").disabled = false;
-    $("statusbar").hidden = true;   // 跑完收起
   }
+}
+
+// 跑完/中止/失败后状态栏不收起,塌成一行常驻小结——累计 token 留在屏幕上
+function settleStatus(label) {
+  $("statusbar").classList.add("done");
+  $("btn-abort").hidden = true;
+  $("sb-stage").textContent = label;
 }
 
 function renderProgress(evt) {
@@ -445,7 +468,7 @@ function renderResult() {
   const counts = {};
   for (const r of rep.rules) counts[r.quadrant] = (counts[r.quadrant] ?? 0) + 1;
 
-  renderCards(counts, $("quadrant-cards"));
+  renderStrip(counts, $("quadrant-cards"));
   $("result-extra").textContent = extraLine(counts);
 
   const dw = rep.summary?.candidateDeadweightTokens
